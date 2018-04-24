@@ -17,7 +17,7 @@ func TestStore(t *testing.T) {
 	})
 	defer mstore.Close()
 
-	store, err := mstore.Create("store", 2)
+	store, err := mstore.Create(nil, "store", 2)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -88,7 +88,7 @@ func TestManagerStore(t *testing.T) {
 	defer mstore.Close()
 
 	sid := "manager"
-	store, err := mstore.Create(sid, 2)
+	store, err := mstore.Create(nil, sid, 2)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -101,7 +101,7 @@ func TestManagerStore(t *testing.T) {
 		return
 	}
 
-	store, err = mstore.Update(sid, 2)
+	store, err = mstore.Update(nil, sid, 2)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -113,13 +113,13 @@ func TestManagerStore(t *testing.T) {
 		return
 	}
 
-	err = mstore.Delete(sid)
+	err = mstore.Delete(nil, sid)
 	if err != nil {
 		t.Error(err.Error())
 		return
 	}
 
-	exists, err := mstore.Check(sid)
+	exists, err := mstore.Check(nil, sid)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -136,7 +136,7 @@ func TestStoreWithExpired(t *testing.T) {
 	defer mstore.Close()
 
 	sid := "test_store_expired"
-	store, err := mstore.Create(sid, 1)
+	store, err := mstore.Create(nil, sid, 1)
 	if err != nil {
 		t.Error(err.Error())
 		return
@@ -157,7 +157,7 @@ func TestStoreWithExpired(t *testing.T) {
 
 	time.Sleep(time.Second * 2)
 
-	exists, err := mstore.Check(sid)
+	exists, err := mstore.Check(nil, sid)
 	if err != nil {
 		t.Error(err.Error())
 		return

@@ -1,6 +1,7 @@
 package redis
 
 import (
+	"context"
 	"encoding/json"
 	"sync"
 	"time"
@@ -54,17 +55,17 @@ func (s *managerStore) parseValue(value string) (map[string]string, error) {
 	return values, nil
 }
 
-func (s *managerStore) Create(sid string, expired int64) (session.Store, error) {
+func (s *managerStore) Create(ctx context.Context, sid string, expired int64) (session.Store, error) {
 	values := make(map[string]string)
-	return &store{sid: sid, cli: s.cli, expired: expired, values: values}, nil
+	return &store{ctx: ctx, sid: sid, cli: s.cli, expired: expired, values: values}, nil
 }
 
-func (s *managerStore) Update(sid string, expired int64) (session.Store, error) {
+func (s *managerStore) Update(ctx context.Context, sid string, expired int64) (session.Store, error) {
 	value, err := s.getValue(sid)
 	if err != nil {
 		return nil, err
 	} else if value == "" {
-		return s.Create(sid, expired)
+		return s.Create(ctx, sid, expired)
 	}
 
 	cmd := s.cli.Set(sid, value, time.Duration(expired)*time.Second)
@@ -77,15 +78,15 @@ func (s *managerStore) Update(sid string, expired int64) (session.Store, error) 
 		return nil, err
 	}
 
-	return &store{sid: sid, cli: s.cli, expired: expired, values: values}, nil
+	return &store{ctx: ctx, sid: sid, cli: s.cli, expired: expired, values: values}, nil
 }
 
-func (s *managerStore) Delete(sid string) error {
+func (s *managerStore) Delete(_ context.Context, sid string) error {
 	cmd := s.cli.Del(sid)
 	return cmd.Err()
 }
 
-func (s *managerStore) Check(sid string) (bool, error) {
+func (s *managerStore) Check(_ context.Context, sid string) (bool, error) {
 	cmd := s.cli.Get(sid)
 	if err := cmd.Err(); err != nil {
 		if err == redis.Nil {
@@ -106,6 +107,11 @@ type store struct {
 	expired int64
 	values  map[string]string
 	sync.RWMutex
+	ctx context.Context
+}
+
+func (s *store) Context() context.Context {
+	return s.ctx
 }
 
 func (s *store) SessionID() string {

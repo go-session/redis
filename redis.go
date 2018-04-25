@@ -143,10 +143,11 @@ func (s *store) Delete(key string) string {
 	return v
 }
 
-func (s *store) Flush() {
+func (s *store) Flush() error {
 	s.Lock()
 	s.values = make(map[string]string)
 	s.Unlock()
+	return s.Save()
 }
 
 func (s *store) Save() error {

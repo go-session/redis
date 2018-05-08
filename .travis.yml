@@ -1,0 +1,9 @@
+language: go
+sudo: false
+go_import_path: gopkg.in/go-session/redis.v1
+go:
+  - 1.7
+services:
+  - redis-server
+script:
+  - $HOME/gopath/bin/goveralls -service=travis-ci

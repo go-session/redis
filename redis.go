@@ -2,17 +2,19 @@ package redis
 
 import (
 	"context"
-	"encoding/json"
 	"sync"
 	"time"
 
 	"github.com/go-redis/redis"
+	"github.com/json-iterator/go"
 	"gopkg.in/session.v2"
 )
 
 var (
-	_ session.ManagerStore = &managerStore{}
-	_ session.Store        = &store{}
+	_             session.ManagerStore = &managerStore{}
+	_             session.Store        = &store{}
+	jsonMarshal                        = jsoniter.Marshal
+	jsonUnmarshal                      = jsoniter.Unmarshal
 )
 
 // NewRedisStore Create an instance of a redis store
@@ -21,6 +23,11 @@ func NewRedisStore(opt *Options) session.ManagerStore {
 		panic("Option cannot be nil")
 	}
 	return &managerStore{cli: redis.NewClient(opt.redisOptions())}
+}
+
+// NewRedisStoreWithCli Create an instance of a redis store
+func NewRedisStoreWithCli(cli *redis.Client) session.ManagerStore {
+	return &managerStore{cli: cli}
 }
 
 type managerStore struct {
@@ -39,25 +46,29 @@ func (s *managerStore) getValue(sid string) (string, error) {
 	return cmd.Val(), nil
 }
 
-func (s *managerStore) parseValue(value string) (map[string]string, error) {
-	var values map[string]string
-
+func (s *managerStore) parseValue(value string) (map[string]interface{}, error) {
+	var values map[string]interface{}
 	if len(value) > 0 {
-		err := json.Unmarshal([]byte(value), &values)
+		err := jsonUnmarshal([]byte(value), &values)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if values == nil {
-		values = make(map[string]string)
+		values = make(map[string]interface{})
 	}
 	return values, nil
 }
 
 func (s *managerStore) Create(ctx context.Context, sid string, expired int64) (session.Store, error) {
-	values := make(map[string]string)
-	return &store{ctx: ctx, sid: sid, cli: s.cli, expired: expired, values: values}, nil
+	return &store{
+		ctx:     ctx,
+		sid:     sid,
+		cli:     s.cli,
+		expired: expired,
+		values:  make(map[string]interface{}),
+	}, nil
 }
 
 func (s *managerStore) Update(ctx context.Context, sid string, expired int64) (session.Store, error) {
@@ -65,7 +76,13 @@ func (s *managerStore) Update(ctx context.Context, sid string, expired int64) (s
 	if err != nil {
 		return nil, err
 	} else if value == "" {
-		return s.Create(ctx, sid, expired)
+		return &store{
+			ctx:     ctx,
+			sid:     sid,
+			cli:     s.cli,
+			expired: expired,
+			values:  make(map[string]interface{}),
+		}, nil
 	}
 
 	cmd := s.cli.Set(sid, value, time.Duration(expired)*time.Second)
@@ -77,24 +94,67 @@ func (s *managerStore) Update(ctx context.Context, sid string, expired int64) (s
 	if err != nil {
 		return nil, err
 	}
-
-	return &store{ctx: ctx, sid: sid, cli: s.cli, expired: expired, values: values}, nil
+	return &store{
+		ctx:     ctx,
+		sid:     sid,
+		cli:     s.cli,
+		expired: expired,
+		values:  values,
+	}, nil
 }
 
 func (s *managerStore) Delete(_ context.Context, sid string) error {
+	if ok, err := s.Check(nil, sid); err != nil {
+		return err
+	} else if !ok {
+		return nil
+	}
+
 	cmd := s.cli.Del(sid)
 	return cmd.Err()
 }
 
 func (s *managerStore) Check(_ context.Context, sid string) (bool, error) {
-	cmd := s.cli.Get(sid)
+	cmd := s.cli.Exists(sid)
 	if err := cmd.Err(); err != nil {
-		if err == redis.Nil {
-			return false, nil
-		}
 		return false, err
 	}
-	return true, nil
+	return cmd.Val() > 0, nil
+}
+
+func (s *managerStore) Refresh(ctx context.Context, oldsid, sid string, expired int64) (session.Store, error) {
+	value, err := s.getValue(oldsid)
+	if err != nil {
+		return nil, err
+	} else if value == "" {
+		return &store{
+			ctx:     ctx,
+			sid:     sid,
+			cli:     s.cli,
+			expired: expired,
+			values:  make(map[string]interface{}),
+		}, nil
+	}
+
+	pipe := s.cli.TxPipeline()
+	pipe.Set(sid, value, time.Duration(expired)*time.Second)
+	pipe.Del(oldsid)
+	_, err = pipe.Exec()
+	if err != nil {
+		return nil, err
+	}
+
+	values, err := s.parseValue(value)
+	if err != nil {
+		return nil, err
+	}
+	return &store{
+		ctx:     ctx,
+		sid:     sid,
+		cli:     s.cli,
+		expired: expired,
+		values:  values,
+	}, nil
 }
 
 func (s *managerStore) Close() error {
@@ -102,12 +162,12 @@ func (s *managerStore) Close() error {
 }
 
 type store struct {
-	sid     string
-	cli     *redis.Client
-	expired int64
-	values  map[string]string
 	sync.RWMutex
-	ctx context.Context
+	ctx     context.Context
+	sid     string
+	expired int64
+	values  map[string]interface{}
+	cli     *redis.Client
 }
 
 func (s *store) Context() context.Context {
@@ -118,20 +178,20 @@ func (s *store) SessionID() string {
 	return s.sid
 }
 
-func (s *store) Set(key, value string) {
+func (s *store) Set(key string, value interface{}) {
 	s.Lock()
 	s.values[key] = value
 	s.Unlock()
 }
 
-func (s *store) Get(key string) (string, bool) {
+func (s *store) Get(key string) (interface{}, bool) {
 	s.RLock()
 	defer s.RUnlock()
 	val, ok := s.values[key]
 	return val, ok
 }
 
-func (s *store) Delete(key string) string {
+func (s *store) Delete(key string) interface{} {
 	s.RLock()
 	v, ok := s.values[key]
 	s.RUnlock()
@@ -145,7 +205,7 @@ func (s *store) Delete(key string) string {
 
 func (s *store) Flush() error {
 	s.Lock()
-	s.values = make(map[string]string)
+	s.values = make(map[string]interface{})
 	s.Unlock()
 	return s.Save()
 }
@@ -155,7 +215,11 @@ func (s *store) Save() error {
 
 	s.RLock()
 	if len(s.values) > 0 {
-		buf, _ := json.Marshal(s.values)
+		buf, err := jsonMarshal(s.values)
+		if err != nil {
+			s.RUnlock()
+			return err
+		}
 		value = string(buf)
 	}
 	s.RUnlock()

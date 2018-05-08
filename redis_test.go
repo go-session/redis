@@ -1,8 +1,11 @@
 package redis
 
 import (
+	"context"
 	"testing"
 	"time"
+
+	. "github.com/smartystreets/goconvey/convey"
 )
 
 const (
@@ -11,156 +14,132 @@ const (
 )
 
 func TestStore(t *testing.T) {
-	mstore := NewRedisStore(&Options{
-		Addr: addr,
-		DB:   db,
-	})
+	mstore := NewRedisStore(
+		&Options{
+			Addr: addr,
+			DB:   db,
+		},
+	)
 	defer mstore.Close()
 
-	store, err := mstore.Create(nil, "store", 2)
-	if err != nil {
-		t.Error(err.Error())
-		return
-	}
+	Convey("Test redis storage operation", t, func() {
+		store, err := mstore.Create(context.Background(), "test_memory_store", 10)
+		if err != nil {
+			So(err, ShouldBeNil)
+		}
+		foo, ok := store.Get("foo")
+		So(ok, ShouldBeFalse)
+		So(foo, ShouldBeNil)
 
-	if store.SessionID() != "store" {
-		t.Error("Wrong value obtained")
-		return
-	}
+		store.Set("foo", "bar")
+		store.Set("foo2", "bar2")
+		err = store.Save()
+		So(err, ShouldBeNil)
 
-	store.Set("foo", "bar")
-	store.Set("user", "bar")
-	err = store.Save()
-	if err != nil {
-		t.Error(err.Error())
-		return
-	}
+		foo, ok = store.Get("foo")
+		So(ok, ShouldBeTrue)
+		So(foo, ShouldEqual, "bar")
 
-	foo, ok := store.Get("foo")
-	if !ok || foo != "bar" {
-		t.Error("Wrong value obtained")
-		return
-	}
+		foo = store.Delete("foo")
+		So(foo, ShouldEqual, "bar")
 
-	foo = store.Delete("foo")
-	if foo != "bar" {
-		t.Error("Wrong value obtained")
-		return
-	}
+		foo, ok = store.Get("foo")
+		So(ok, ShouldBeFalse)
+		So(foo, ShouldBeNil)
 
-	err = store.Save()
-	if err != nil {
-		t.Error(err.Error())
-		return
-	}
+		foo2, ok := store.Get("foo2")
+		So(ok, ShouldBeTrue)
+		So(foo2, ShouldEqual, "bar2")
 
-	_, ok = store.Get("foo")
-	if ok {
-		t.Error("Expected value is false")
-		return
-	}
+		err = store.Flush()
+		So(err, ShouldBeNil)
 
-	user, ok := store.Get("user")
-	if !ok || user != "bar" {
-		t.Error("Wrong value obtained")
-		return
-	}
-
-	err = store.Flush()
-	if err != nil {
-		t.Error(err.Error())
-		return
-	}
-
-	_, ok = store.Get("user")
-	if ok {
-		t.Error("Expected value is false")
-		return
-	}
+		foo2, ok = store.Get("foo2")
+		So(ok, ShouldBeFalse)
+		So(foo2, ShouldBeNil)
+	})
 }
 
 func TestManagerStore(t *testing.T) {
-	mstore := NewRedisStore(&Options{
-		Addr: addr,
-		DB:   db,
-	})
+	mstore := NewRedisStore(
+		&Options{
+			Addr: addr,
+			DB:   db,
+		},
+	)
 	defer mstore.Close()
 
-	sid := "manager"
-	store, err := mstore.Create(nil, sid, 2)
-	if err != nil {
-		t.Error(err.Error())
-		return
-	}
+	Convey("Test redis-based storage management operations", t, func() {
+		sid := "test_manager_store"
+		store, err := mstore.Create(context.Background(), sid, 10)
+		So(store, ShouldNotBeNil)
+		So(err, ShouldBeNil)
 
-	store.Set("foo", "bar")
-	err = store.Save()
-	if err != nil {
-		t.Error(err.Error())
-		return
-	}
+		store.Set("foo", "bar")
+		err = store.Save()
+		So(err, ShouldBeNil)
 
-	store, err = mstore.Update(nil, sid, 2)
-	if err != nil {
-		t.Error(err.Error())
-		return
-	}
+		store, err = mstore.Update(context.Background(), sid, 10)
+		So(store, ShouldNotBeNil)
+		So(err, ShouldBeNil)
 
-	foo, ok := store.Get("foo")
-	if !ok || foo != "bar" {
-		t.Error("Wrong value obtained")
-		return
-	}
+		foo, ok := store.Get("foo")
+		So(ok, ShouldBeTrue)
+		So(foo, ShouldEqual, "bar")
 
-	err = mstore.Delete(nil, sid)
-	if err != nil {
-		t.Error(err.Error())
-		return
-	}
+		newsid := "test_manager_store2"
+		store, err = mstore.Refresh(context.Background(), sid, newsid, 10)
+		So(store, ShouldNotBeNil)
+		So(err, ShouldBeNil)
 
-	exists, err := mstore.Check(nil, sid)
-	if err != nil {
-		t.Error(err.Error())
-		return
-	} else if exists {
-		t.Error("Expected value is false")
-	}
+		foo, ok = store.Get("foo")
+		So(ok, ShouldBeTrue)
+		So(foo, ShouldEqual, "bar")
+
+		exists, err := mstore.Check(context.Background(), sid)
+		So(exists, ShouldBeFalse)
+		So(err, ShouldBeNil)
+
+		err = mstore.Delete(context.Background(), newsid)
+		So(err, ShouldBeNil)
+
+		exists, err = mstore.Check(context.Background(), newsid)
+		So(exists, ShouldBeFalse)
+		So(err, ShouldBeNil)
+	})
 }
 
 func TestStoreWithExpired(t *testing.T) {
-	mstore := NewRedisStore(&Options{
-		Addr: addr,
-		DB:   db,
-	})
+	mstore := NewRedisStore(
+		&Options{
+			Addr: addr,
+			DB:   db,
+		},
+	)
 	defer mstore.Close()
 
-	sid := "test_store_expired"
-	store, err := mstore.Create(nil, sid, 1)
-	if err != nil {
-		t.Error(err.Error())
-		return
-	}
+	Convey("Test Redis Store Expiration", t, func() {
+		sid := "test_store_expired"
+		store, err := mstore.Create(context.Background(), sid, 1)
+		So(store, ShouldNotBeNil)
+		So(err, ShouldBeNil)
 
-	store.Set("foo", "bar")
-	err = store.Save()
-	if err != nil {
-		t.Error(err.Error())
-		return
-	}
+		store.Set("foo", "bar")
+		err = store.Save()
+		So(err, ShouldBeNil)
 
-	foo, ok := store.Get("foo")
-	if !ok || foo != "bar" {
-		t.Error("Wrong value obtained")
-		return
-	}
+		store, err = mstore.Update(context.Background(), sid, 1)
+		So(store, ShouldNotBeNil)
+		So(err, ShouldBeNil)
 
-	time.Sleep(time.Second * 2)
+		foo, ok := store.Get("foo")
+		So(foo, ShouldEqual, "bar")
+		So(ok, ShouldBeTrue)
 
-	exists, err := mstore.Check(nil, sid)
-	if err != nil {
-		t.Error(err.Error())
-		return
-	} else if exists {
-		t.Error("Expected value is false")
-	}
+		time.Sleep(time.Second * 2)
+
+		exists, err := mstore.Check(context.Background(), sid)
+		So(err, ShouldBeNil)
+		So(exists, ShouldBeFalse)
+	})
 }

@@ -85,7 +85,7 @@ func (s *managerStore) Update(ctx context.Context, sid string, expired int64) (s
 		}, nil
 	}
 
-	cmd := s.cli.Set(sid, value, time.Duration(expired)*time.Second)
+	cmd := s.cli.Expire(sid, time.Duration(expired)*time.Second)
 	if err = cmd.Err(); err != nil {
 		return nil, err
 	}
@@ -94,6 +94,7 @@ func (s *managerStore) Update(ctx context.Context, sid string, expired int64) (s
 	if err != nil {
 		return nil, err
 	}
+
 	return &store{
 		ctx:     ctx,
 		sid:     sid,

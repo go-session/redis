@@ -18,11 +18,11 @@ var (
 )
 
 // NewRedisStore create an instance of a redis store
-func NewRedisStore(opt *Options) session.ManagerStore {
-	if opt == nil {
-		panic("option cannot be nil")
+func NewRedisStore(opts *Options) session.ManagerStore {
+	if opts == nil {
+		panic("options cannot be nil")
 	}
-	return &managerStore{cli: redis.NewClient(opt.redisOptions())}
+	return &managerStore{cli: redis.NewClient(opts.redisOptions())}
 }
 
 // NewRedisStoreWithCli create an instance of a redis store
@@ -37,8 +37,38 @@ func NewRedisStoreWithCli(cli *redis.Client) session.ManagerStore {
 	}
 }
 
+// NewRedisClusterStore create an instance of a redis cluster store
+func NewRedisClusterStore(opts *ClusterOptions) session.ManagerStore {
+	if opts == nil {
+		panic("options cannot be nil")
+	}
+	return &managerStore{cli: redis.NewClusterClient(opts.redisClusterOptions())}
+}
+
+// NewRedisClusterStoreWithCli create an instance of a redis cluster store
+func NewRedisClusterStoreWithCli(cli *redis.ClusterClient) session.ManagerStore {
+	return &managerStore{
+		cli: cli,
+		pool: sync.Pool{
+			New: func() interface{} {
+				return newDefaultStore(cli)
+			},
+		},
+	}
+}
+
+type clienter interface {
+	Get(key string) *redis.StringCmd
+	Set(key string, value interface{}, expiration time.Duration) *redis.StatusCmd
+	Expire(key string, expiration time.Duration) *redis.BoolCmd
+	Exists(keys ...string) *redis.IntCmd
+	TxPipeline() redis.Pipeliner
+	Del(keys ...string) *redis.IntCmd
+	Close() error
+}
+
 type managerStore struct {
-	cli  *redis.Client
+	cli  clienter
 	pool sync.Pool
 }
 
@@ -147,7 +177,7 @@ func (s *managerStore) Close() error {
 	return s.cli.Close()
 }
 
-func newDefaultStore(cli *redis.Client) *store {
+func newDefaultStore(cli clienter) *store {
 	return &store{
 		cli: cli,
 	}
@@ -159,7 +189,7 @@ type store struct {
 	sid     string
 	expired int64
 	values  map[string]interface{}
-	cli     *redis.Client
+	cli     clienter
 }
 
 func (s *store) reset(ctx context.Context, sid string, expired int64, values map[string]interface{}) {

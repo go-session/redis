@@ -31,7 +31,7 @@ func NewRedisStoreWithCli(cli *redis.Client) session.ManagerStore {
 		cli: cli,
 		pool: sync.Pool{
 			New: func() interface{} {
-				return newDefaultStore(cli)
+				return newStore(cli)
 			},
 		},
 	}
@@ -51,7 +51,7 @@ func NewRedisClusterStoreWithCli(cli *redis.ClusterClient) session.ManagerStore 
 		cli: cli,
 		pool: sync.Pool{
 			New: func() interface{} {
-				return newDefaultStore(cli)
+				return newStore(cli)
 			},
 		},
 	}
@@ -177,7 +177,7 @@ func (s *managerStore) Close() error {
 	return s.cli.Close()
 }
 
-func newDefaultStore(cli clienter) *store {
+func newStore(cli clienter) *store {
 	return &store{
 		cli: cli,
 	}

@@ -23,10 +23,8 @@ func TestStore(t *testing.T) {
 	defer mstore.Close()
 
 	Convey("Test redis storage operation", t, func() {
-		store, err := mstore.Create(context.Background(), "test_memory_store", 10)
-		if err != nil {
-			So(err, ShouldBeNil)
-		}
+		store, err := mstore.Create(context.Background(), "test_redis_store", 10)
+		So(err, ShouldBeNil)
 		foo, ok := store.Get("foo")
 		So(ok, ShouldBeFalse)
 		So(foo, ShouldBeNil)

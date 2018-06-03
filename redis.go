@@ -22,7 +22,7 @@ func NewRedisStore(opts *Options) session.ManagerStore {
 	if opts == nil {
 		panic("options cannot be nil")
 	}
-	return &managerStore{cli: redis.NewClient(opts.redisOptions())}
+	return NewRedisStoreWithCli(redis.NewClient(opts.redisOptions()))
 }
 
 // NewRedisStoreWithCli create an instance of a redis store
@@ -42,7 +42,7 @@ func NewRedisClusterStore(opts *ClusterOptions) session.ManagerStore {
 	if opts == nil {
 		panic("options cannot be nil")
 	}
-	return &managerStore{cli: redis.NewClusterClient(opts.redisClusterOptions())}
+	return NewRedisClusterStoreWithCli(redis.NewClusterClient(opts.redisClusterOptions()))
 }
 
 // NewRedisClusterStoreWithCli create an instance of a redis cluster store

@@ -1,11 +1,15 @@
 language: go
 sudo: false
-go_import_path: gopkg.in/go-session/redis.v1
+go_import_path: github.com/go-session/redis
 go:
   - 1.7
 services:
   - redis-server
 before_install:
-  - go get github.com/mattn/goveralls
+  - go get -t -v ./...
+
 script:
-  - $HOME/gopath/bin/goveralls -service=travis-ci
+  - go test -race -coverprofile=coverage.txt -covermode=atomic
+
+after_success:
+  - bash <(curl -s https://codecov.io/bash)

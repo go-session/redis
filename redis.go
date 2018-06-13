@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/go-redis/redis"
+	"github.com/go-session/session"
 	"github.com/json-iterator/go"
-	"gopkg.in/session.v2"
 )
 
 var (

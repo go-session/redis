@@ -2,19 +2,19 @@ package redis
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"time"
 
 	"github.com/go-redis/redis"
 	"github.com/go-session/session"
-	"github.com/json-iterator/go"
 )
 
 var (
 	_             session.ManagerStore = &managerStore{}
 	_             session.Store        = &store{}
-	jsonMarshal                        = jsoniter.Marshal
-	jsonUnmarshal                      = jsoniter.Unmarshal
+	jsonMarshal                        = json.Marshal
+	jsonUnmarshal                      = json.Unmarshal
 )
 
 // NewRedisStore create an instance of a redis store
@@ -29,11 +29,6 @@ func NewRedisStore(opts *Options) session.ManagerStore {
 func NewRedisStoreWithCli(cli *redis.Client) session.ManagerStore {
 	return &managerStore{
 		cli: cli,
-		pool: sync.Pool{
-			New: func() interface{} {
-				return newStore(cli)
-			},
-		},
 	}
 }
 
@@ -49,11 +44,6 @@ func NewRedisClusterStore(opts *ClusterOptions) session.ManagerStore {
 func NewRedisClusterStoreWithCli(cli *redis.ClusterClient) session.ManagerStore {
 	return &managerStore{
 		cli: cli,
-		pool: sync.Pool{
-			New: func() interface{} {
-				return newStore(cli)
-			},
-		},
 	}
 }
 
@@ -68,8 +58,7 @@ type clienter interface {
 }
 
 type managerStore struct {
-	cli  clienter
-	pool sync.Pool
+	cli clienter
 }
 
 func (s *managerStore) getValue(sid string) (string, error) {
@@ -96,20 +85,16 @@ func (s *managerStore) parseValue(value string) (map[string]interface{}, error) 
 }
 
 func (s *managerStore) Create(ctx context.Context, sid string, expired int64) (session.Store, error) {
-	store := s.pool.Get().(*store)
-	store.reset(ctx, sid, expired, nil)
-	return store, nil
+	return newStore(ctx, s.cli, sid, expired, nil), nil
 }
 
 func (s *managerStore) Update(ctx context.Context, sid string, expired int64) (session.Store, error) {
-	store := s.pool.Get().(*store)
-
 	value, err := s.getValue(sid)
 	if err != nil {
 		return nil, err
 	} else if value == "" {
-		store.reset(ctx, sid, expired, nil)
-		return store, nil
+
+		return newStore(ctx, s.cli, sid, expired, nil), nil
 	}
 
 	cmd := s.cli.Expire(sid, time.Duration(expired)*time.Second)
@@ -121,9 +106,8 @@ func (s *managerStore) Update(ctx context.Context, sid string, expired int64) (s
 	if err != nil {
 		return nil, err
 	}
-	store.reset(ctx, sid, expired, values)
 
-	return store, nil
+	return newStore(ctx, s.cli, sid, expired, values), nil
 }
 
 func (s *managerStore) Delete(_ context.Context, sid string) error {
@@ -146,14 +130,11 @@ func (s *managerStore) Check(_ context.Context, sid string) (bool, error) {
 }
 
 func (s *managerStore) Refresh(ctx context.Context, oldsid, sid string, expired int64) (session.Store, error) {
-	store := s.pool.Get().(*store)
-
 	value, err := s.getValue(oldsid)
 	if err != nil {
 		return nil, err
 	} else if value == "" {
-		store.reset(ctx, sid, expired, nil)
-		return store, nil
+		return newStore(ctx, s.cli, sid, expired, nil), nil
 	}
 
 	pipe := s.cli.TxPipeline()
@@ -168,18 +149,25 @@ func (s *managerStore) Refresh(ctx context.Context, oldsid, sid string, expired 
 	if err != nil {
 		return nil, err
 	}
-	store.reset(ctx, sid, expired, values)
 
-	return store, nil
+	return newStore(ctx, s.cli, sid, expired, values), nil
 }
 
 func (s *managerStore) Close() error {
 	return s.cli.Close()
 }
 
-func newStore(cli clienter) *store {
+func newStore(ctx context.Context, cli clienter, sid string, expired int64, values map[string]interface{}) *store {
+	if values == nil {
+		values = make(map[string]interface{})
+	}
+
 	return &store{
-		cli: cli,
+		cli:     cli,
+		ctx:     ctx,
+		sid:     sid,
+		expired: expired,
+		values:  values,
 	}
 }
 
@@ -190,16 +178,6 @@ type store struct {
 	expired int64
 	values  map[string]interface{}
 	cli     clienter
-}
-
-func (s *store) reset(ctx context.Context, sid string, expired int64, values map[string]interface{}) {
-	if values == nil {
-		values = make(map[string]interface{})
-	}
-	s.ctx = ctx
-	s.sid = sid
-	s.expired = expired
-	s.values = values
 }
 
 func (s *store) Context() context.Context {

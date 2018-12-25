@@ -18,33 +18,47 @@ var (
 )
 
 // NewRedisStore create an instance of a redis store
-func NewRedisStore(opts *Options) session.ManagerStore {
+func NewRedisStore(opts *Options, prefix ...string) session.ManagerStore {
 	if opts == nil {
 		panic("options cannot be nil")
 	}
-	return NewRedisStoreWithCli(redis.NewClient(opts.redisOptions()))
+	return NewRedisStoreWithCli(
+		redis.NewClient(opts.redisOptions()),
+		prefix...,
+	)
 }
 
 // NewRedisStoreWithCli create an instance of a redis store
-func NewRedisStoreWithCli(cli *redis.Client) session.ManagerStore {
-	return &managerStore{
+func NewRedisStoreWithCli(cli *redis.Client, prefix ...string) session.ManagerStore {
+	store := &managerStore{
 		cli: cli,
 	}
+	if len(prefix) > 0 {
+		store.prefix = prefix[0]
+	}
+	return store
 }
 
 // NewRedisClusterStore create an instance of a redis cluster store
-func NewRedisClusterStore(opts *ClusterOptions) session.ManagerStore {
+func NewRedisClusterStore(opts *ClusterOptions, prefix ...string) session.ManagerStore {
 	if opts == nil {
 		panic("options cannot be nil")
 	}
-	return NewRedisClusterStoreWithCli(redis.NewClusterClient(opts.redisClusterOptions()))
+	return NewRedisClusterStoreWithCli(
+		redis.NewClusterClient(opts.redisClusterOptions()),
+		prefix...,
+	)
 }
 
 // NewRedisClusterStoreWithCli create an instance of a redis cluster store
-func NewRedisClusterStoreWithCli(cli *redis.ClusterClient) session.ManagerStore {
-	return &managerStore{
+func NewRedisClusterStoreWithCli(cli *redis.ClusterClient, prefix ...string) session.ManagerStore {
+	store := &managerStore{
 		cli: cli,
 	}
+	if len(prefix) > 0 {
+		store.prefix = prefix[0]
+	}
+	return store
 }
 
 type clienter interface {
@@ -58,11 +72,16 @@ type clienter interface {
 }
 
 type managerStore struct {
-	cli clienter
+	cli    clienter
+	prefix string
+}
+
+func (s *managerStore) getKey(key string) string {
+	return s.prefix + key
 }
 
 func (s *managerStore) getValue(sid string) (string, error) {
-	cmd := s.cli.Get(sid)
+	cmd := s.cli.Get(s.getKey(sid))
 	if err := cmd.Err(); err != nil {
 		if err == redis.Nil {
 			return "", nil
@@ -85,7 +104,7 @@ func (s *managerStore) parseValue(value string) (map[string]interface{}, error) 
 }
 
 func (s *managerStore) Create(ctx context.Context, sid string, expired int64) (session.Store, error) {
-	return newStore(ctx, s.cli, sid, expired, nil), nil
+	return newStore(ctx, s, sid, expired, nil), nil
 }
 
 func (s *managerStore) Update(ctx context.Context, sid string, expired int64) (session.Store, error) {
@@ -93,11 +112,10 @@ func (s *managerStore) Update(ctx context.Context, sid string, expired int64) (s
 	if err != nil {
 		return nil, err
 	} else if value == "" {
-
-		return newStore(ctx, s.cli, sid, expired, nil), nil
+		return newStore(ctx, s, sid, expired, nil), nil
 	}
 
-	cmd := s.cli.Expire(sid, time.Duration(expired)*time.Second)
+	cmd := s.cli.Expire(s.getKey(sid), time.Duration(expired)*time.Second)
 	if err = cmd.Err(); err != nil {
 		return nil, err
 	}
@@ -107,7 +125,7 @@ func (s *managerStore) Update(ctx context.Context, sid string, expired int64) (s
 		return nil, err
 	}
 
-	return newStore(ctx, s.cli, sid, expired, values), nil
+	return newStore(ctx, s, sid, expired, values), nil
 }
 
 func (s *managerStore) Delete(_ context.Context, sid string) error {
@@ -117,12 +135,12 @@ func (s *managerStore) Delete(_ context.Context, sid string) error {
 		return nil
 	}
 
-	cmd := s.cli.Del(sid)
+	cmd := s.cli.Del(s.getKey(sid))
 	return cmd.Err()
 }
 
 func (s *managerStore) Check(_ context.Context, sid string) (bool, error) {
-	cmd := s.cli.Exists(sid)
+	cmd := s.cli.Exists(s.getKey(sid))
 	if err := cmd.Err(); err != nil {
 		return false, err
 	}
@@ -134,12 +152,12 @@ func (s *managerStore) Refresh(ctx context.Context, oldsid, sid string, expired 
 	if err != nil {
 		return nil, err
 	} else if value == "" {
-		return newStore(ctx, s.cli, sid, expired, nil), nil
+		return newStore(ctx, s, sid, expired, nil), nil
 	}
 
 	pipe := s.cli.TxPipeline()
-	pipe.Set(sid, value, time.Duration(expired)*time.Second)
-	pipe.Del(oldsid)
+	pipe.Set(s.getKey(sid), value, time.Duration(expired)*time.Second)
+	pipe.Del(s.getKey(oldsid))
 	_, err = pipe.Exec()
 	if err != nil {
 		return nil, err
@@ -150,20 +168,20 @@ func (s *managerStore) Refresh(ctx context.Context, oldsid, sid string, expired 
 		return nil, err
 	}
 
-	return newStore(ctx, s.cli, sid, expired, values), nil
+	return newStore(ctx, s, sid, expired, values), nil
 }
 
 func (s *managerStore) Close() error {
 	return s.cli.Close()
 }
 
-func newStore(ctx context.Context, cli clienter, sid string, expired int64, values map[string]interface{}) *store {
+func newStore(ctx context.Context, ms *managerStore, sid string, expired int64, values map[string]interface{}) *store {
 	if values == nil {
 		values = make(map[string]interface{})
 	}
 
 	return &store{
-		cli:     cli,
+		ms:      ms,
 		ctx:     ctx,
 		sid:     sid,
 		expired: expired,
@@ -173,11 +191,11 @@ func newStore(ctx context.Context, cli clienter, sid string, expired int64, valu
 
 type store struct {
 	sync.RWMutex
+	ms      *managerStore
 	ctx     context.Context
 	sid     string
 	expired int64
 	values  map[string]interface{}
-	cli     clienter
 }
 
 func (s *store) Context() context.Context {
@@ -234,6 +252,6 @@ func (s *store) Save() error {
 	}
 	s.RUnlock()
 
-	cmd := s.cli.Set(s.sid, value, time.Duration(s.expired)*time.Second)
+	cmd := s.ms.cli.Set(s.ms.getKey(s.sid), value, time.Duration(s.expired)*time.Second)
 	return cmd.Err()
 }

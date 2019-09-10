@@ -18,12 +18,12 @@ var (
 )
 
 // NewRedisStore create an instance of a redis store
-func NewRedisStore(opts *Options, prefix ...string) session.ManagerStore {
+func NewRedisStore(opts *redis.Options, prefix ...string) session.ManagerStore {
 	if opts == nil {
 		panic("options cannot be nil")
 	}
 	return NewRedisStoreWithCli(
-		redis.NewClient(opts.redisOptions()),
+		redis.NewClient(opts),
 		prefix...,
 	)
 }
@@ -40,12 +40,12 @@ func NewRedisStoreWithCli(cli *redis.Client, prefix ...string) session.ManagerSt
 }
 
 // NewRedisClusterStore create an instance of a redis cluster store
-func NewRedisClusterStore(opts *ClusterOptions, prefix ...string) session.ManagerStore {
+func NewRedisClusterStore(opts *redis.ClusterOptions, prefix ...string) session.ManagerStore {
 	if opts == nil {
 		panic("options cannot be nil")
 	}
 	return NewRedisClusterStoreWithCli(
-		redis.NewClusterClient(opts.redisClusterOptions()),
+		redis.NewClusterClient(opts),
 		prefix...,
 	)
 }

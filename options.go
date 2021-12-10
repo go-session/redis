@@ -1,11 +1,12 @@
 package redis
 
 import (
+	"context"
 	"crypto/tls"
 	"net"
 	"time"
 
-	"github.com/go-redis/redis"
+	redis "github.com/go-redis/redis/v8"
 )
 
 // Options Redis parameter options
@@ -18,7 +19,7 @@ type Options struct {
 
 	// Dialer creates new network connection and has priority over
 	// Network and Addr options.
-	Dialer func() (net.Conn, error)
+	Dialer func(ctx context.Context, network, addr string) (net.Conn, error)
 
 	// Optional password. Must match the password specified in the
 	// requirepass server configuration option.
@@ -109,7 +110,7 @@ type ClusterOptions struct {
 
 	// Following options are copied from Options struct.
 
-	OnConnect func(*redis.Conn) error
+	OnConnect func(ctx context.Context, cn *redis.Conn) error
 
 	MaxRetries      int
 	MinRetryBackoff time.Duration

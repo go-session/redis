@@ -6,7 +6,7 @@ import (
 	"net"
 	"time"
 
-	redis "github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 )
 
 // Options Redis parameter options
@@ -59,11 +59,7 @@ type Options struct {
 	// Amount of time after which client closes idle connections.
 	// Should be less than server's timeout.
 	// Default is 5 minutes.
-	IdleTimeout time.Duration
-	// Frequency of idle checks.
-	// Default is 1 minute.
-	// When minus value is set, then idle check is disabled.
-	IdleCheckFrequency time.Duration
+	ConnMaxIdleTime time.Duration
 
 	// TLS Config to use. When set TLS will be negotiated.
 	TLSConfig *tls.Config
@@ -84,8 +80,7 @@ func (o *Options) redisOptions() *redis.Options {
 		WriteTimeout:       o.WriteTimeout,
 		PoolSize:           o.PoolSize,
 		PoolTimeout:        o.PoolTimeout,
-		IdleTimeout:        o.IdleTimeout,
-		IdleCheckFrequency: o.IdleCheckFrequency,
+		ConnMaxIdleTime:    o.ConnMaxIdleTime,
 		TLSConfig:          o.TLSConfig,
 	}
 }
@@ -124,8 +119,7 @@ type ClusterOptions struct {
 	// PoolSize applies per cluster node and not for the whole cluster.
 	PoolSize           int
 	PoolTimeout        time.Duration
-	IdleTimeout        time.Duration
-	IdleCheckFrequency time.Duration
+	ConnMaxIdleTime    time.Duration
 }
 
 func (o *ClusterOptions) redisClusterOptions() *redis.ClusterOptions {
@@ -145,7 +139,6 @@ func (o *ClusterOptions) redisClusterOptions() *redis.ClusterOptions {
 		WriteTimeout:       o.WriteTimeout,
 		PoolSize:           o.PoolSize,
 		PoolTimeout:        o.PoolTimeout,
-		IdleTimeout:        o.IdleTimeout,
-		IdleCheckFrequency: o.IdleCheckFrequency,
+		ConnMaxIdleTime:    o.ConnMaxIdleTime,
 	}
 }

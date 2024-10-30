@@ -1,4 +1,4 @@
-module github.com/bohehe/go-session-redis/v3
+module github.com/go-session/redis/v3
 
 go 1.17
 
